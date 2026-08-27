@@ -86,7 +86,13 @@
 
   <!-- ===== INPUT PANEL ===== -->
   <section class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 mb-6 shadow-sm">
-    <h2 class="font-display font-semibold text-base mb-4">1&nbsp;&middot;&nbsp;Thông số đầu vào</h2>
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-display font-semibold text-base">1&nbsp;&middot;&nbsp;Thông số đầu vào</h2>
+      <div class="flex items-center gap-3">
+        <span id="saveIndicator" class="text-[11px] font-mono text-[var(--muted)] hidden sm:inline">Đã lưu trên trình duyệt</span>
+        <button id="btnResetData" type="button" class="text-[11px] font-medium text-[var(--muted)] hover:text-[var(--danger)] border border-[var(--border)] rounded-lg px-2.5 py-1 transition-colors">↺ Khôi phục mặc định</button>
+      </div>
+    </div>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div>
         <label class="block text-xs font-medium text-[var(--muted)] mb-1.5">Tổng điện tiêu thụ / tháng (kWh)</label>
@@ -139,7 +145,7 @@
           </table>
         </div>
       </div>
-      <p class="text-xs text-[var(--muted)] mt-3">Sửa trực tiếp % hoặc kWh của từng giờ — hai cột luôn tự đồng bộ theo nhau. Chỉnh sửa thủ công sẽ tự chuyển mẫu sang "Tùy chỉnh".</p>
+      <p class="text-xs text-[var(--muted)] mt-3">Sửa trực tiếp % hoặc kWh của từng giờ — hai cột luôn tự đồng bộ theo nhau. Chỉnh sửa thủ công sẽ tự chuyển mẫu sang "Tùy chỉnh". Dữ liệu tự động lưu trên trình duyệt này, mở lại file vẫn còn.</p>
     </section>
 
     <!-- ===== TỔNG KẾT ===== -->
@@ -203,6 +209,7 @@
   const DAY_HOURS   = [6,7,8,9,10,11,12,13,14,15,16,17];
   const NIGHT_HOURS = [18,19,20,21,22,23,0,1,2,3,4,5];
   const dayHourSet  = new Set(DAY_HOURS);
+  const STORAGE_KEY = 'gpsolar_phanbo_tai_v1';
 
   // ===================== STATE =====================
   const state = {
@@ -224,6 +231,8 @@
   const elDayRatioSeg     = document.getElementById('dayRatioSeg');
   const elNightRatioSeg   = document.getElementById('nightRatioSeg');
   const elSuggestedKwp    = document.getElementById('suggestedKwp');
+  const elSaveIndicator   = document.getElementById('saveIndicator');
+  const elBtnReset        = document.getElementById('btnResetData');
 
   // ===================== HÀM TÍNH TOÁN =====================
 
@@ -395,12 +404,45 @@
     chart.update();
   }
 
+  // ===================== LƯU / ĐỌC DỮ LIỆU TRÊN TRÌNH DUYỆT (localStorage) =====================
+  // Dữ liệu chỉ lưu cục bộ trên chính trình duyệt này (không gửi lên server nào).
+  // Nếu trình duyệt chặn localStorage (VD: chế độ ẩn danh) thì bỏ qua, không ảnh hưởng app.
+  function saveState(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        monthlyKwh: state.monthlyKwh,
+        psh: state.psh,
+        profile: elProfile.value,
+        percents: state.percents
+      }));
+      if (elSaveIndicator){
+        elSaveIndicator.textContent = 'Đã lưu trên trình duyệt';
+        elSaveIndicator.classList.remove('hidden');
+      }
+    } catch(err){
+      if (elSaveIndicator) elSaveIndicator.classList.add('hidden');
+    }
+  }
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.percents) || data.percents.length !== 24) return null;
+      return data;
+    } catch(err){
+      return null;
+    }
+  }
+
   // ===================== VÒNG CẬP NHẬT TỔNG =====================
   function recalcAll(){
     refreshTableValues();
     updateValidation();
     updateSummary();
     updateChart();
+    saveState();
   }
 
   // ===================== SỰ KIỆN =====================
@@ -464,11 +506,29 @@
     recalcAll();
   });
 
+  // Nút "Khôi phục mặc định" -> xóa dữ liệu đã lưu trên trình duyệt và tải lại trang
+  elBtnReset.addEventListener('click', () => {
+    const ok = confirm('Xóa toàn bộ dữ liệu đã lưu trên trình duyệt này và khôi phục về mẫu mặc định?');
+    if (!ok) return;
+    try { localStorage.removeItem(STORAGE_KEY); } catch(err){ /* bỏ qua nếu không truy cập được */ }
+    location.reload();
+  });
+
   // ===================== KHỞI TẠO =====================
   function init(){
+    // Ưu tiên khôi phục dữ liệu đã lưu từ lần dùng trước trên chính trình duyệt này
+    const saved = loadState();
+    if (saved){
+      state.monthlyKwh = typeof saved.monthlyKwh === 'number' ? saved.monthlyKwh : state.monthlyKwh;
+      state.psh = typeof saved.psh === 'number' ? saved.psh : state.psh;
+      state.percents = saved.percents.slice();
+      elProfile.value = PROFILES.hasOwnProperty(saved.profile) ? saved.profile : 'custom';
+    } else {
+      elProfile.value = 'office';
+    }
+
     elMonthlyKwh.value = fmt(state.monthlyKwh, 0);
     elPsh.value = fmt(state.psh, 1);
-    elProfile.value = 'office';
     buildTable();
     buildChart();
     recalcAll();
