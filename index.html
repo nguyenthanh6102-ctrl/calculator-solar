@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Phân bổ Tải & Công suất Điện Mặt Trời</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F5F6F8;
+    --surface:#FFFFFF;
+    --border:#E2E5EA;
+    --text:#101828;
+    --muted:#667085;
+    --day:#F59E0B;
+    --day-deep:#B45309;
+    --day-tint:#FEF3C7;
+    --day-row:#FFFBEB;
+    --night:#4F46E5;
+    --night-deep:#312E81;
+    --night-tint:#E0E7FF;
+    --night-row:#F5F5FF;
+    --danger:#DC2626;
+    --danger-tint:#FEE2E2;
+    --success:#16A34A;
+    --success-tint:#DCFCE7;
+  }
+  *{box-sizing:border-box;}
+  html,body{background:var(--bg);color:var(--text);}
+  body{font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased;}
+  .font-display{font-family:'Space Grotesk',sans-serif;}
+  .font-mono{font-family:'JetBrains Mono',monospace;}
+
+  /* Bảng 24h */
+  .hour-table thead th{position:sticky; top:0; z-index:10; background:var(--surface);}
+  .hour-table tbody tr.row-day{background:var(--day-row);}
+  .hour-table tbody tr.row-night{background:var(--night-row);}
+  .hour-table tbody tr td{border-bottom:1px solid var(--border);}
+  .hour-table tbody tr.row-day td:first-child{border-left:3px solid var(--day);}
+  .hour-table tbody tr.row-night td:first-child{border-left:3px solid var(--night);}
+  .cell-input{
+    width:100%; background:transparent; border:1px solid transparent; border-radius:6px;
+    padding:6px 8px; font-family:'JetBrains Mono',monospace; font-size:13px; text-align:right;
+    color:var(--text); transition:background .12s, border-color .12s;
+  }
+  .cell-input:hover{background:rgba(0,0,0,0.03);}
+  .cell-input:focus{outline:none; background:#fff; border-color:var(--night); box-shadow:0 0 0 3px rgba(79,70,229,0.12);}
+  .cell-input::-webkit-outer-spin-button,.cell-input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0;}
+  .cell-input[type=number]{ -moz-appearance:textfield;}
+
+  .scroll-shadow{box-shadow: inset 0 -8px 8px -8px rgba(16,24,40,0.06);}
+
+  input[type=number].field:focus, select.field:focus{
+    outline:none; border-color:var(--night); box-shadow:0 0 0 3px rgba(79,70,229,0.12);
+  }
+
+  /* Thanh tỉ lệ Ngày/Đêm - phần tử signature */
+  .ratio-track{height:16px; border-radius:999px; overflow:hidden; display:flex; width:100%; background:var(--border);}
+  .ratio-day-seg{background:linear-gradient(90deg, var(--day), #FBBF24); transition:width .35s ease;}
+  .ratio-night-seg{background:linear-gradient(90deg, #6366F1, var(--night-deep)); transition:width .35s ease;}
+
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:#D0D5DD; border-radius:999px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+
+  <!-- ===== HEADER ===== -->
+  <header class="flex items-start justify-between gap-4 mb-6 sm:mb-8">
+    <div>
+      <div class="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-[var(--muted)] mb-1">
+        <span class="w-2 h-2 rounded-full bg-[var(--day)]"></span> GP Solar &middot; Công cụ thiết kế
+      </div>
+      <h1 class="font-display text-2xl sm:text-3xl font-bold tracking-tight">Phân bổ Tải & Công suất Điện Mặt Trời</h1>
+      <p class="text-sm text-[var(--muted)] mt-1 max-w-xl">Nhập biểu đồ phụ tải 24 giờ để bám sát nhu cầu tiêu thụ ban ngày và gợi ý công suất hệ thống hòa lưới tối ưu.</p>
+    </div>
+    <svg width="72" height="40" viewBox="0 0 72 40" class="hidden sm:block flex-shrink-0 mt-1" fill="none">
+      <path d="M2 34 C 20 4, 52 4, 70 34" stroke="#D0D5DD" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <circle cx="20" cy="15.2" r="5" fill="var(--day)"/>
+      <circle cx="58" cy="27.5" r="4" fill="var(--night)"/>
+    </svg>
+  </header>
+
+  <!-- ===== INPUT PANEL ===== -->
+  <section class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 mb-6 shadow-sm">
+    <h2 class="font-display font-semibold text-base mb-4">1&nbsp;&middot;&nbsp;Thông số đầu vào</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-[var(--muted)] mb-1.5">Tổng điện tiêu thụ / tháng (kWh)</label>
+        <input id="inputMonthlyKwh" type="number" min="0" step="1" value="900"
+          class="field w-full border border-[var(--border)] rounded-lg px-3 py-2.5 font-mono text-sm bg-white">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-[var(--muted)] mb-1.5">Số giờ nắng đỉnh — PSH (h)</label>
+        <input id="inputPsh" type="number" min="0.1" step="0.1" value="4.0"
+          class="field w-full border border-[var(--border)] rounded-lg px-3 py-2.5 font-mono text-sm bg-white">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-[var(--muted)] mb-1.5">Mẫu khách hàng</label>
+        <select id="inputProfile" class="field w-full border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="office">Văn phòng (8h - 17h)</option>
+          <option value="household">Hộ gia đình tiêu chuẩn</option>
+          <option value="manu">Sản xuất ca ngày</option>
+          <option value="custom">Tùy chỉnh</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+
+    <!-- ===== BẢNG 24H ===== -->
+    <section class="lg:col-span-3 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-display font-semibold text-base">2&nbsp;&middot;&nbsp;Bảng phân bổ tải 24 giờ</h2>
+        <div class="flex items-center gap-3 text-[11px] font-mono text-[var(--muted)]">
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[var(--day)] inline-block"></span>Ngày</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[var(--night)] inline-block"></span>Đêm</span>
+        </div>
+      </div>
+
+      <!-- Banner validate tổng % -->
+      <div id="validationBanner" class="text-sm font-medium rounded-lg px-3 py-2 mb-3 flex items-center justify-between font-mono"></div>
+
+      <div class="border border-[var(--border)] rounded-xl overflow-hidden">
+        <div class="max-h-[480px] overflow-y-auto scroll-shadow">
+          <table class="hour-table w-full text-sm border-collapse">
+            <thead>
+              <tr class="text-left text-xs text-[var(--muted)] border-b border-[var(--border)]">
+                <th class="px-3 py-2.5 font-medium">Khung giờ</th>
+                <th class="px-3 py-2.5 font-medium text-right">Tỉ lệ %</th>
+                <th class="px-3 py-2.5 font-medium text-right">Điện năng (kWh)</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"><!-- filled by JS --></tbody>
+          </table>
+        </div>
+      </div>
+      <p class="text-xs text-[var(--muted)] mt-3">Sửa trực tiếp % hoặc kWh của từng giờ — hai cột luôn tự đồng bộ theo nhau. Chỉnh sửa thủ công sẽ tự chuyển mẫu sang "Tùy chỉnh".</p>
+    </section>
+
+    <!-- ===== TỔNG KẾT ===== -->
+    <section class="lg:col-span-2 flex flex-col gap-4">
+      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm">
+        <h2 class="font-display font-semibold text-base mb-4">3&nbsp;&middot;&nbsp;Tổng kết Ngày / Đêm</h2>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="rounded-xl p-3.5" style="background:var(--day-tint);">
+            <div class="text-[11px] font-medium text-[var(--day-deep)] mb-1">Ban ngày (6h–17h)</div>
+            <div id="dayTotalKwh" class="font-mono font-semibold text-lg text-[var(--day-deep)]">0 kWh</div>
+          </div>
+          <div class="rounded-xl p-3.5" style="background:var(--night-tint);">
+            <div class="text-[11px] font-medium text-[var(--night-deep)] mb-1">Ban đêm (18h–5h)</div>
+            <div id="nightTotalKwh" class="font-mono font-semibold text-lg text-[var(--night-deep)]">0 kWh</div>
+          </div>
+        </div>
+
+        <div class="mb-1 flex items-center justify-between text-xs font-mono">
+          <span id="dayRatioLabel" class="text-[var(--day-deep)] font-semibold">Ngày 0%</span>
+          <span id="nightRatioLabel" class="text-[var(--night-deep)] font-semibold">Đêm 0%</span>
+        </div>
+        <div class="ratio-track mb-5">
+          <div id="dayRatioSeg" class="ratio-day-seg" style="width:0%"></div>
+          <div id="nightRatioSeg" class="ratio-night-seg" style="width:0%"></div>
+        </div>
+
+        <div class="rounded-xl p-4 sm:p-5 text-white" style="background:linear-gradient(135deg, var(--day), #D97706);">
+          <div class="text-[11px] font-medium text-amber-50/90 mb-1">Gợi ý công suất hệ thống hòa lưới</div>
+          <div id="suggestedKwp" class="font-display font-bold text-4xl leading-tight">0.00 <span class="text-lg font-medium">kWp</span></div>
+          <div class="text-[11px] font-mono text-amber-50/80 mt-2">= Tổng kWh ban ngày ÷ PSH ÷ 0.8</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== BIỂU ĐỒ ===== -->
+  <section class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
+    <h2 class="font-display font-semibold text-base mb-4">4&nbsp;&middot;&nbsp;Biểu đồ tiêu thụ 24 giờ</h2>
+    <div class="relative" style="height:280px;">
+      <canvas id="loadChart"></canvas>
+    </div>
+  </section>
+
+  <footer class="text-center text-xs text-[var(--muted)] pb-4">
+    Công cụ tính toán tham khảo &middot; Kết quả mang tính chất sơ bộ, cần đối chiếu với hồ sơ thiết kế và khảo sát thực tế trước khi thi công.
+  </footer>
+</div>
+
+<script>
+(function(){
+  // ===================== DỮ LIỆU MẪU KHÁCH HÀNG =====================
+  // Mỗi mẫu là mảng 24 phần tử (giờ 0 -> 23), tổng luôn = 100%
+  const PROFILES = {
+    office:    [1.5,1.5,1.5,1.5,1.5,2.0,1.8,3.6,8.09,8.54,8.54,8.09,5.39,8.09,8.54,8.09,6.74,4.49,2.5,2.0,1.5,1.5,1.5,1.5],
+    household: [1.04,0.73,0.52,0.52,0.52,0.84,1.57,2.61,2.09,1.88,2.61,6.78,8.35,6.26,2.61,2.61,3.13,4.18,8.35,10.44,11.48,10.96,7.31,2.61],
+    manu:      [0.54,0.54,0.54,0.54,0.54,0.54,0.54,8.45,8.45,8.45,8.45,8.45,8.45,8.45,8.45,8.45,8.45,8.45,0.54,0.54,0.54,0.54,0.54,0.57],
+    custom:    [4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.17,4.09]
+  };
+
+  const DAY_HOURS   = [6,7,8,9,10,11,12,13,14,15,16,17];
+  const NIGHT_HOURS = [18,19,20,21,22,23,0,1,2,3,4,5];
+  const dayHourSet  = new Set(DAY_HOURS);
+
+  // ===================== STATE =====================
+  const state = {
+    monthlyKwh: 900,
+    psh: 4.0,
+    percents: PROFILES.office.slice() // nguồn dữ liệu gốc — luôn tính kWh từ đây
+  };
+
+  // ===================== DOM REFS =====================
+  const elMonthlyKwh   = document.getElementById('inputMonthlyKwh');
+  const elPsh           = document.getElementById('inputPsh');
+  const elProfile        = document.getElementById('inputProfile');
+  const elTableBody      = document.getElementById('tableBody');
+  const elValidation     = document.getElementById('validationBanner');
+  const elDayTotal        = document.getElementById('dayTotalKwh');
+  const elNightTotal      = document.getElementById('nightTotalKwh');
+  const elDayRatioLabel   = document.getElementById('dayRatioLabel');
+  const elNightRatioLabel = document.getElementById('nightRatioLabel');
+  const elDayRatioSeg     = document.getElementById('dayRatioSeg');
+  const elNightRatioSeg   = document.getElementById('nightRatioSeg');
+  const elSuggestedKwp    = document.getElementById('suggestedKwp');
+
+  // ===================== HÀM TÍNH TOÁN =====================
+
+  // Điện tiêu thụ trung bình / ngày, quy đổi từ điện tháng (chia 30 ngày)
+  function dailyKwh(){
+    return state.monthlyKwh / 30;
+  }
+
+  // kWh của 1 giờ = (điện/ngày) * % giờ đó / 100
+  function hourKwh(h){
+    return dailyKwh() * state.percents[h] / 100;
+  }
+
+  function fmt(n, digits){
+    if (!isFinite(n)) return '0';
+    return n.toLocaleString('vi-VN', {minimumFractionDigits: digits, maximumFractionDigits: digits});
+  }
+
+  // Đổi mẫu đang chọn sang "Tùy chỉnh" khi người dùng tự sửa 1 ô
+  function markAsCustom(){
+    if (elProfile.value !== 'custom') elProfile.value = 'custom';
+  }
+
+  // ===================== DỰNG BẢNG 24H =====================
+  function buildTable(){
+    let rows = '';
+    for (let h = 0; h < 24; h++){
+      const isDay = dayHourSet.has(h);
+      const label = String(h).padStart(2,'0') + ':00 - ' + String((h+1)%24).padStart(2,'0') + ':00';
+      rows += `
+        <tr class="${isDay ? 'row-day' : 'row-night'}">
+          <td class="px-3 py-1.5 text-[13px] font-mono text-[var(--text)]">${label}</td>
+          <td class="px-1.5 py-1">
+            <div class="flex items-center justify-end gap-1">
+              <input class="cell-input percent-input" type="number" step="0.01" min="0" max="100" data-hour="${h}">
+              <span class="text-[11px] text-[var(--muted)] font-mono">%</span>
+            </div>
+          </td>
+          <td class="px-1.5 py-1">
+            <div class="flex items-center justify-end gap-1">
+              <input class="cell-input kwh-input" type="number" step="0.01" min="0" data-hour="${h}">
+              <span class="text-[11px] text-[var(--muted)] font-mono">kWh</span>
+            </div>
+          </td>
+        </tr>`;
+    }
+    elTableBody.innerHTML = rows;
+  }
+
+  // Đổ giá trị hiện tại (percents + kWh tính toán) vào các ô input trong bảng
+  function refreshTableValues(){
+    for (let h = 0; h < 24; h++){
+      const pInput = elTableBody.querySelector(`.percent-input[data-hour="${h}"]`);
+      const kInput = elTableBody.querySelector(`.kwh-input[data-hour="${h}"]`);
+      pInput.value = round2(state.percents[h]);
+      kInput.value = round2(hourKwh(h));
+    }
+  }
+
+  function round2(n){
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+  }
+
+  // ===================== BANNER KIỂM TRA TỔNG % =====================
+  function updateValidation(){
+    const total = round2(state.percents.reduce((a,b)=>a+b, 0));
+    const diff = Math.round((total - 100) * 100) / 100;
+    if (Math.abs(diff) < 0.05){
+      elValidation.style.background = 'var(--success-tint)';
+      elValidation.style.color = 'var(--success)';
+      elValidation.innerHTML = `<span>✓ Tổng tỉ lệ 24 giờ hợp lệ</span><span>${fmt(total,2)}%</span>`;
+    } else {
+      elValidation.style.background = 'var(--danger-tint)';
+      elValidation.style.color = 'var(--danger)';
+      const msg = diff > 0 ? `vượt ${fmt(diff,2)}%` : `còn thiếu ${fmt(Math.abs(diff),2)}%`;
+      elValidation.innerHTML = `<span>⚠ Tổng tỉ lệ ${msg} so với 100%</span><span>${fmt(total,2)}%</span>`;
+    }
+  }
+
+  // ===================== TỔNG KẾT NGÀY / ĐÊM & GỢI Ý kWp =====================
+  function updateSummary(){
+    const dayTotal   = DAY_HOURS.reduce((sum,h)=> sum + hourKwh(h), 0);
+    const nightTotal = NIGHT_HOURS.reduce((sum,h)=> sum + hourKwh(h), 0);
+    const grandTotal = dayTotal + nightTotal;
+
+    const dayPct   = grandTotal > 0 ? (dayTotal / grandTotal) * 100 : 0;
+    const nightPct = 100 - dayPct;
+
+    // Công thức gợi ý công suất: kWp = kWh ban ngày / PSH / 0.8 (hệ số hiệu suất hệ thống)
+    const psh = state.psh > 0 ? state.psh : 0.0001;
+    const suggestedKwp = dayTotal / psh / 0.8;
+
+    elDayTotal.textContent   = fmt(dayTotal, 1)   + ' kWh';
+    elNightTotal.textContent = fmt(nightTotal, 1) + ' kWh';
+
+    elDayRatioLabel.textContent   = 'Ngày ' + fmt(dayPct, 1) + '%';
+    elNightRatioLabel.textContent = 'Đêm ' + fmt(nightPct, 1) + '%';
+    elDayRatioSeg.style.width   = dayPct + '%';
+    elNightRatioSeg.style.width = nightPct + '%';
+
+    elSuggestedKwp.innerHTML = fmt(suggestedKwp, 2) + ' <span class="text-lg font-medium">kWp</span>';
+
+    return { dayTotal, nightTotal };
+  }
+
+  // ===================== BIỂU ĐỒ 24H (Chart.js) =====================
+  let chart;
+  function buildChart(){
+    const ctx = document.getElementById('loadChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: Array.from({length:24}, (_,h)=> String(h).padStart(2,'0')+'h'),
+        datasets: [{
+          label: 'Điện năng tiêu thụ (kWh)',
+          data: Array.from({length:24}, (_,h)=> round2(hourKwh(h))),
+          backgroundColor: Array.from({length:24}, (_,h)=> dayHourSet.has(h) ? '#F59E0B' : '#4F46E5'),
+          borderRadius: 4,
+          maxBarThickness: 28
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ' ' + ctx.parsed.y.toLocaleString('vi-VN', {maximumFractionDigits:2}) + ' kWh'
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display:false }, ticks: { font:{ family:"'JetBrains Mono', monospace", size:10 } } },
+          y: { beginAtZero:true, grid: { color:'#EEF0F3' }, ticks: { font:{ family:"'JetBrains Mono', monospace", size:10 } } }
+        }
+      }
+    });
+  }
+
+  function updateChart(){
+    chart.data.datasets[0].data = Array.from({length:24}, (_,h)=> round2(hourKwh(h)));
+    chart.update();
+  }
+
+  // ===================== VÒNG CẬP NHẬT TỔNG =====================
+  function recalcAll(){
+    refreshTableValues();
+    updateValidation();
+    updateSummary();
+    updateChart();
+  }
+
+  // ===================== SỰ KIỆN =====================
+
+  // Sửa % của 1 giờ -> cập nhật percents[h], kWh của giờ đó tự tính lại theo
+  elTableBody.addEventListener('input', (e) => {
+    const target = e.target;
+    const h = parseInt(target.dataset.hour, 10);
+    if (isNaN(h)) return;
+
+    if (target.classList.contains('percent-input')){
+      const val = parseFloat(target.value);
+      state.percents[h] = isNaN(val) ? 0 : val;
+      markAsCustom();
+      recalcAll();
+      // Giữ focus & vị trí con trỏ trên chính ô đang gõ
+      const active = elTableBody.querySelector(`.percent-input[data-hour="${h}"]`);
+      if (active) active.focus();
+    }
+
+    if (target.classList.contains('kwh-input')){
+      const val = parseFloat(target.value);
+      const kwhVal = isNaN(val) ? 0 : val;
+      const dk = dailyKwh();
+      state.percents[h] = dk > 0 ? (kwhVal / dk) * 100 : 0;
+      markAsCustom();
+      recalcAll();
+      const active = elTableBody.querySelector(`.kwh-input[data-hour="${h}"]`);
+      if (active) active.focus();
+    }
+  });
+
+  // Đổi tổng điện tháng hoặc PSH -> chỉ số kWh từng giờ & gợi ý kWp thay đổi theo, % giữ nguyên
+  elMonthlyKwh.addEventListener('input', () => {
+    const val = parseFloat(elMonthlyKwh.value);
+    state.monthlyKwh = isNaN(val) || val < 0 ? 0 : val;
+    recalcAll();
+  });
+
+  elPsh.addEventListener('input', () => {
+    const val = parseFloat(elPsh.value);
+    state.psh = isNaN(val) || val <= 0 ? 0 : val;
+    recalcAll();
+  });
+
+  // Đổi mẫu khách hàng -> load lại toàn bộ % của mẫu đó vào bảng
+  elProfile.addEventListener('change', () => {
+    const key = elProfile.value;
+    state.percents = PROFILES[key].slice();
+    recalcAll();
+  });
+
+  // ===================== KHỞI TẠO =====================
+  function init(){
+    elMonthlyKwh.value = state.monthlyKwh;
+    elPsh.value = state.psh;
+    elProfile.value = 'office';
+    buildTable();
+    buildChart();
+    recalcAll();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
