@@ -114,6 +114,29 @@
         </select>
       </div>
     </div>
+
+    <div class="mt-4 pt-4 border-t border-[var(--border)] flex flex-col sm:flex-row sm:items-end gap-3">
+      <div class="flex-1">
+        <label class="block text-xs font-medium text-[var(--muted)] mb-1.5">Ép tỉ lệ Ngày/Đêm tổng (khỏi cần sửa từng giờ)</label>
+        <select id="inputRatioPreset" class="field w-full border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="keep">Giữ theo số liệu hiện tại</option>
+          <option value="80-20">Ngày 80% &middot; Đêm 20%</option>
+          <option value="70-30">Ngày 70% &middot; Đêm 30%</option>
+          <option value="60-40">Ngày 60% &middot; Đêm 40%</option>
+          <option value="50-50">Ngày 50% &middot; Đêm 50%</option>
+          <option value="40-60">Ngày 40% &middot; Đêm 60%</option>
+          <option value="30-70">Ngày 30% &middot; Đêm 70%</option>
+          <option value="20-80">Ngày 20% &middot; Đêm 80%</option>
+          <option value="custom">Tùy chỉnh %&hellip;</option>
+        </select>
+      </div>
+      <div id="customRatioWrap" class="hidden sm:w-36">
+        <label class="block text-xs font-medium text-[var(--muted)] mb-1.5">Ngày (%)</label>
+        <input id="inputRatioCustom" type="text" inputmode="decimal" value="50"
+          class="field w-full border border-[var(--border)] rounded-lg px-3 py-2.5 font-mono text-sm bg-white">
+      </div>
+    </div>
+    <p class="text-xs text-[var(--muted)] mt-2">Chọn tỉ lệ Ngày/Đêm mong muốn — công cụ sẽ tự co giãn % của từng giờ theo đúng hình dạng đang có (giờ nào đang cao vẫn cao hơn), chỉ đổi tổng tỉ trọng Ngày/Đêm. Không cần sửa tay từng ô trong bảng.</p>
   </section>
 
   <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
@@ -233,6 +256,9 @@
   const elSuggestedKwp    = document.getElementById('suggestedKwp');
   const elSaveIndicator   = document.getElementById('saveIndicator');
   const elBtnReset        = document.getElementById('btnResetData');
+  const elRatioPreset     = document.getElementById('inputRatioPreset');
+  const elRatioCustom     = document.getElementById('inputRatioCustom');
+  const elCustomRatioWrap = document.getElementById('customRatioWrap');
 
   // ===================== HÀM TÍNH TOÁN =====================
 
@@ -254,6 +280,46 @@
   // Đổi mẫu đang chọn sang "Tùy chỉnh" khi người dùng tự sửa 1 ô
   function markAsCustom(){
     if (elProfile.value !== 'custom') elProfile.value = 'custom';
+  }
+
+  // Co giãn % của 24 giờ để đạt đúng tổng tỉ lệ Ngày/Đêm mong muốn,
+  // nhưng vẫn giữ nguyên "hình dạng" tương quan giữa các giờ trong cùng
+  // khung Ngày (hoặc cùng khung Đêm) — chỉ nhân mỗi giờ với 1 hệ số co giãn.
+  // Nhờ vậy không cần sửa tay từng ô trong bảng 24h.
+  function applyDayNightRatio(dayTargetPct){
+    dayTargetPct = Math.min(100, Math.max(0, dayTargetPct));
+    const nightTargetPct = 100 - dayTargetPct;
+
+    const currentDayTotal   = DAY_HOURS.reduce((s,h)=> s + state.percents[h], 0);
+    const currentNightTotal = NIGHT_HOURS.reduce((s,h)=> s + state.percents[h], 0);
+
+    if (currentDayTotal > 0){
+      const factor = dayTargetPct / currentDayTotal;
+      DAY_HOURS.forEach(h => { state.percents[h] = state.percents[h] * factor; });
+    } else {
+      const even = dayTargetPct / DAY_HOURS.length;
+      DAY_HOURS.forEach(h => { state.percents[h] = even; });
+    }
+
+    if (currentNightTotal > 0){
+      const factor = nightTargetPct / currentNightTotal;
+      NIGHT_HOURS.forEach(h => { state.percents[h] = state.percents[h] * factor; });
+    } else {
+      const even = nightTargetPct / NIGHT_HOURS.length;
+      NIGHT_HOURS.forEach(h => { state.percents[h] = even; });
+    }
+
+    markAsCustom();
+    recalcAll();
+  }
+
+  // Khi người dùng sửa tay 1 giờ cụ thể hoặc đổi mẫu khách hàng, tỉ lệ vừa ép
+  // (nếu có) không còn đúng nữa nên đưa ô chọn về "Giữ theo số liệu hiện tại".
+  function resetRatioPresetToKeep(){
+    if (elRatioPreset.value !== 'keep'){
+      elRatioPreset.value = 'keep';
+      elCustomRatioWrap.classList.add('hidden');
+    }
   }
 
   // ===================== DỰNG BẢNG 24H =====================
@@ -456,6 +522,7 @@
     if (target.classList.contains('percent-input')){
       state.percents[h] = parseNum(target.value);
       markAsCustom();
+      resetRatioPresetToKeep();
       recalcAll();
       // Ô đang gõ được refreshTableValues() bỏ qua nên giữ nguyên nội dung,
       // không cần focus lại — con trỏ không bị nhảy nữa.
@@ -466,6 +533,7 @@
       const dk = dailyKwh();
       state.percents[h] = dk > 0 ? (kwhVal / dk) * 100 : 0;
       markAsCustom();
+      resetRatioPresetToKeep();
       recalcAll();
     }
   });
@@ -503,7 +571,35 @@
   elProfile.addEventListener('change', () => {
     const key = elProfile.value;
     state.percents = PROFILES[key].slice();
+    resetRatioPresetToKeep();
     recalcAll();
+  });
+
+  // Chọn tỉ lệ Ngày/Đêm dựng sẵn (VD: 40/60, 30/70...) -> co giãn ngay bảng 24h theo tỉ lệ đó
+  elRatioPreset.addEventListener('change', () => {
+    const val = elRatioPreset.value;
+    if (val === 'keep'){
+      elCustomRatioWrap.classList.add('hidden');
+      return;
+    }
+    if (val === 'custom'){
+      elCustomRatioWrap.classList.remove('hidden');
+      applyDayNightRatio(parseNum(elRatioCustom.value));
+      return;
+    }
+    elCustomRatioWrap.classList.add('hidden');
+    const dayPct = Number(val.split('-')[0]);
+    applyDayNightRatio(dayPct);
+  });
+
+  // Gõ tay % Ngày khi đang ở chế độ "Tùy chỉnh"
+  elRatioCustom.addEventListener('input', () => {
+    if (elRatioPreset.value !== 'custom') return;
+    applyDayNightRatio(parseNum(elRatioCustom.value));
+  });
+  elRatioCustom.addEventListener('focusout', () => {
+    const clamped = Math.min(100, Math.max(0, parseNum(elRatioCustom.value)));
+    elRatioCustom.value = fmt(clamped, 1);
   });
 
   // Nút "Khôi phục mặc định" -> xóa dữ liệu đã lưu trên trình duyệt và tải lại trang
